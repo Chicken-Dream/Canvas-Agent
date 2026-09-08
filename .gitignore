@@ -27,3 +27,8 @@ frontend/tsconfig.tsbuildinfo
 
 # misc
 .DS_Store
+
+DEPLOYMENT_PLAN.md
+AWS_SETUP.md
+canvas-agent-deploy-policy.json
+canvas-agent-ec2-role-policy.json

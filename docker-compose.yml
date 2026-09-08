@@ -47,6 +47,11 @@ services:
   frontend:
     build: ./frontend
     restart: unless-stopped
+    # Local-dev only: hot-reload on source changes, reading env vars live
+    # rather than the Dockerfile's build-time-baked value. The image's own
+    # default CMD (npm run start, serving the build-time-baked bundle) is
+    # what actually ships/deploys.
+    command: npm run dev
     depends_on:
       - backend
     environment:

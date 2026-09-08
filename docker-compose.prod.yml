@@ -1,0 +1,78 @@
+# Production stack for the single-EC2-instance deployment (see
+# DEPLOYMENT_PLAN.md / AWS_SETUP.md). Unlike docker-compose.yml (local dev):
+# no bind-mounted source, no dev-mode commands, no host-exposed ports except
+# Caddy's 80/443 - Postgres/backend/frontend are only reachable from other
+# containers on the compose network. Run with:
+#   docker compose -f docker-compose.prod.yml up -d --build
+# Needs a `.env` file next to this one (see .env.example) with at least
+# POSTGRES_PASSWORD, SESSION_SECRET, and DOMAIN set.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-canvas_agent}
+      POSTGRES_USER: ${POSTGRES_USER:-canvas_agent}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - canvas_agent_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-canvas_agent}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-canvas_agent}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-canvas_agent}
+      CANVAS_BASE_URL: ${CANVAS_BASE_URL:-https://canvas.ualberta.ca}
+      FRONTEND_ORIGIN: https://${DOMAIN:?set DOMAIN in .env}
+      SESSION_SECRET: ${SESSION_SECRET:?set SESSION_SECRET in .env}
+      # Same-origin via the Caddy reverse proxy below (frontend and backend
+      # share one domain), so plain SameSite=Lax works - no cross-site
+      # cookie complexity to manage, unlike a split-origin deployment.
+      SESSION_COOKIE_SECURE: "true"
+      SESSION_COOKIE_SAMESITE: "lax"
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      BEDROCK_MODEL_ID: ${BEDROCK_MODEL_ID:-amazon.nova-micro-v1:0}
+      # No AWS_ACCESS_KEY_ID/SECRET - the EC2 instance's own IAM role
+      # (canvas-agent-ec2-role) grants Bedrock access instead.
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # Empty = same-origin relative fetches (e.g. `/auth/me`), which the
+        # Caddy proxy below resolves to the backend container. Must be a
+        # build arg, not a runtime env var - see frontend/Dockerfile.
+        NEXT_PUBLIC_API_URL: ""
+    restart: unless-stopped
+    depends_on:
+      - backend
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:?set DOMAIN in .env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - backend
+      - frontend
+
+volumes:
+  canvas_agent_pgdata:
+  caddy_data:
+  caddy_config:

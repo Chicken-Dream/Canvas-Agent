@@ -1,0 +1,15 @@
+{$DOMAIN} {
+	# Caddy auto-provisions and renews a Let's Encrypt certificate for
+	# $DOMAIN the first time it starts - no ACM, no ALB, no manual cert
+	# management. Requires DOMAIN's DNS A record to already point at this
+	# instance's (Elastic) IP before first startup, or issuance fails.
+
+	@backend path /auth/* /api/* /health
+	handle @backend {
+		reverse_proxy backend:8000
+	}
+
+	handle {
+		reverse_proxy frontend:3000
+	}
+}
