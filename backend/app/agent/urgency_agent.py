@@ -105,12 +105,7 @@ def _build_tools(db: AsyncSession, user: User) -> list:
     return [get_upcoming_assignments, get_courses, get_course_description]
 
 
-def _build_model() -> BedrockModel:
-    session = boto3.Session(
-        aws_access_key_id=settings.aws_access_key_id or None,
-        aws_secret_access_key=settings.aws_secret_access_key or None,
-        region_name=settings.aws_region,
-    )
+def _build_model(session: boto3.Session) -> BedrockModel:
     # Non-streaming: this endpoint returns one final result over plain
     # HTTP, not a live token stream, so there's nothing to gain from
     # ConverseStream here.
@@ -123,13 +118,24 @@ def _build_model() -> BedrockModel:
 
 
 async def run_urgency_agent(db: AsyncSession, user: User) -> UrgencyReportOut:
-    if not settings.aws_access_key_id or not settings.aws_secret_access_key:
+    session = boto3.Session(
+        aws_access_key_id=settings.aws_access_key_id or None,
+        aws_secret_access_key=settings.aws_secret_access_key or None,
+        region_name=settings.aws_region,
+    )
+    # Checks the *actual* boto3 credential chain (static keys, IAM instance
+    # role via IMDS, etc.) rather than only AWS_ACCESS_KEY_ID/SECRET being
+    # set - a deployment with no static keys but a valid EC2 instance role
+    # (the documented, recommended setup - see AWS_SETUP.md) is fine and
+    # must not be rejected here.
+    if session.get_credentials() is None:
         raise RuntimeError(
-            "AWS Bedrock credentials are not configured (AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY)."
+            "No AWS credentials available for Bedrock - set AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY, "
+            "or run this on an instance with an IAM role that grants Bedrock access."
         )
 
     agent = Agent(
-        model=_build_model(),
+        model=_build_model(session),
         tools=_build_tools(db, user),
         system_prompt=SYSTEM_PROMPT,
         retry_strategy=_BedrockTransientErrorRetryStrategy(max_attempts=3, initial_delay=2, max_delay=10),

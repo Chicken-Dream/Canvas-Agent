@@ -90,12 +90,36 @@ def aws_credentials_configured(monkeypatch):
 async def test_run_urgency_agent_raises_without_credentials(monkeypatch, db_session):
     monkeypatch.setattr(settings, "aws_access_key_id", "")
     monkeypatch.setattr(settings, "aws_secret_access_key", "")
+    # Force boto3's own credential chain to genuinely find nothing, rather
+    # than relying on the test environment happening to have no ambient
+    # AWS credentials (env vars, ~/.aws/credentials, instance metadata).
+    monkeypatch.setattr("boto3.Session.get_credentials", lambda self: None)
     user = User(canvas_user_id=1, name="Test Student")
     db_session.add(user)
     await db_session.flush()
 
-    with pytest.raises(RuntimeError, match="not configured"):
+    with pytest.raises(RuntimeError, match="No AWS credentials"):
         await run_urgency_agent(db_session, user)
+
+
+async def test_run_urgency_agent_works_without_static_keys_via_instance_role(monkeypatch, db_session):
+    """The bug this guards against: a deployment with no
+    AWS_ACCESS_KEY_ID/SECRET but a valid credential source elsewhere (an
+    EC2 instance role, in production) must not be rejected - only genuinely
+    unresolvable credentials should raise. See AWS_SETUP.md.
+    """
+    monkeypatch.setattr(settings, "aws_access_key_id", "")
+    monkeypatch.setattr(settings, "aws_secret_access_key", "")
+    monkeypatch.setattr("boto3.Session.get_credentials", lambda self: object())
+    monkeypatch.setattr(urgency_agent_mod, "Agent", FakeAgent)
+
+    user = User(canvas_user_id=4, name="Test Student 4")
+    db_session.add(user)
+    await db_session.flush()
+
+    result = await run_urgency_agent(db_session, user)
+
+    assert isinstance(result, UrgencyReportOut)
 
 
 async def test_run_urgency_agent_wires_tools_and_returns_structured_output(monkeypatch, db_session):
