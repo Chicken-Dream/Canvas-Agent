@@ -1,0 +1,29 @@
+# env
+.env
+.env.local
+.env.*.local
+
+# backend (Python)
+**/__pycache__/
+**/*.pyc
+**/.venv/
+**/.pytest_cache/
+backend/*.db
+
+# frontend (Next.js)
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/tsconfig.tsbuildinfo
+
+# secrets / keys accidentally dropped in the tree
+*.pem
+*.key
+.aws/
+
+# editors
+.vscode/
+.idea/
+
+# misc
+.DS_Store

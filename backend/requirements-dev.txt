@@ -1,0 +1,7 @@
+-r requirements.txt
+
+# Test-only deps. aiosqlite backs the in-memory DB used by the test suite;
+# the shipped app targets Postgres (see docker-compose.yml / README).
+pytest==8.3.3
+pytest-asyncio==0.24.0
+aiosqlite==0.20.0

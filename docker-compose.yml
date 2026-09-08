@@ -1,0 +1,62 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-canvas_agent}
+      POSTGRES_USER: ${POSTGRES_USER:-canvas_agent}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me}
+    ports:
+      - "5432:5432"
+    volumes:
+      - canvas_agent_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-canvas_agent}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    # Local-dev only: hot-reload on source changes. The image's own default
+    # CMD (no --reload) is what actually ships/deploys.
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-canvas_agent}:${POSTGRES_PASSWORD:-change_me}@postgres:5432/${POSTGRES_DB:-canvas_agent}
+      CANVAS_BASE_URL: ${CANVAS_BASE_URL:-https://canvas.ualberta.ca}
+      CANVAS_CLIENT_ID: ${CANVAS_CLIENT_ID:-}
+      CANVAS_CLIENT_SECRET: ${CANVAS_CLIENT_SECRET:-}
+      CANVAS_REDIRECT_URI: ${CANVAS_REDIRECT_URI:-http://localhost:8000/auth/canvas/callback}
+      FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-http://localhost:3000}
+      SESSION_SECRET: ${SESSION_SECRET:-change_me_to_a_random_string}
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
+      SESSION_COOKIE_SAMESITE: ${SESSION_COOKIE_SAMESITE:-lax}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      BEDROCK_MODEL_ID: ${BEDROCK_MODEL_ID:-amazon.nova-micro-v1:0}
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+
+volumes:
+  canvas_agent_pgdata:
