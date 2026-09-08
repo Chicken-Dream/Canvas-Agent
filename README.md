@@ -10,6 +10,8 @@ assignment weighting from the outline × how demanding the course itself is —
 and explains its reasoning per assignment. Future work: mobile notifications
 and multi-student OAuth login (see "Designed-in hooks" below).
 
+Local setup: see `HOW_TO_RUN.md`. Deploying to AWS: see `DEPLOYMENT_PLAN.md`.
+
 ## Stack
 
 | Layer    | Choice                                   | Why |
