@@ -1,4 +1,9 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+// `??` not `||`: an explicitly-empty NEXT_PUBLIC_API_URL means "same
+// origin, use relative paths" (the production same-origin Caddy-proxy
+// setup - see docker-compose.prod.yml) and must NOT fall through to the
+// localhost default just because "" is falsy in JS. Only a genuinely
+// unset (undefined) value should fall back to the local-dev default.
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 export class ApiError extends Error {
   status: number;
