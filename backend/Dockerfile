@@ -1,3 +1,7 @@
+# Used both for local dev (via docker-compose.yml) and as the real
+# deployment artifact (built here, pushed to Amazon ECR, run by AWS App
+# Runner) - see DEPLOYMENT_PLAN.md / AWS_SETUP.md. Keep this image
+# production-correct.
 FROM python:3.12-slim
 
 WORKDIR /app

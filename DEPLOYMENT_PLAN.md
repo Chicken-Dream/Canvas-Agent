@@ -115,7 +115,24 @@ choice rather than an accidental gap.
   patterns, editor folders) and initialized the git repo with a clean
   first commit — `.env` confirmed excluded, `.env.example` confirmed to
   contain only placeholders.
-- Full 80-test backend suite still green after all of the above.
+- Added `backend/.dockerignore` and `frontend/.dockerignore` — neither
+  existed, so `COPY . .` in both Dockerfiles was pulling in whatever
+  happened to be on the host (`node_modules/`, `.next/`, `__pycache__/`,
+  `.venv/`) if present. This was already silently inflating local build
+  context transfer time (~877KB/86s → 63KB/0.7s for the frontend after the
+  fix) and, in production, could have shipped a stale/wrong-platform
+  `node_modules` or `.venv` into the image.
+- Added `amplify.yml` at the repo root (Amplify monorepo build spec,
+  `appRoot: frontend`) so connecting the repo in the Amplify Console picks
+  up the right build commands without hand-configuration.
+- Clarified in both Dockerfiles which one is the real deployment artifact:
+  `backend/Dockerfile` is (built → pushed to ECR → run by App Runner), so
+  it stays production-correct; `frontend/Dockerfile` is local-dev-only
+  (Amplify builds the frontend directly from source, never touching this
+  file) and is explicitly commented as such rather than over-engineered
+  into a second, unused production build path.
+- Full 80-test backend suite still green after all of the above; local
+  `docker compose up` re-verified working end-to-end.
 
 ## IAM policy for the App Runner instance role (Bedrock access)
 
@@ -134,42 +151,15 @@ choice rather than an accidental gap.
 
 ## Step-by-step runbook
 
-1. **Push to GitHub.** Create a repo, `git remote add origin <url>`,
-   `git push -u origin master`. (Local repo and first commit are already
-   done — see `git log`.)
-2. **RDS.** Create a PostgreSQL instance (`db.t4g.micro`, single-AZ,
-   private subnets, ~20GB gp3 storage). Note the connection details.
-3. **Secrets Manager.** Store `DATABASE_URL` (built from the RDS
-   endpoint), a freshly generated `SESSION_SECRET`
-   (`python -c "import secrets; print(secrets.token_urlsafe(32))"`), and
-   (if using real OAuth later) `CANVAS_CLIENT_SECRET`.
-4. **App Runner service (backend).**
-   - Source: this GitHub repo, `backend/` as the build context (App
-     Runner can build directly from the `Dockerfile` there).
-   - Attach an instance IAM role with the Bedrock policy above.
-   - Add a VPC Connector so it can reach RDS privately; put RDS's security
-     group in front, allowing inbound only from the connector's SG.
-   - Env vars: `DATABASE_URL`/`SESSION_SECRET` from Secrets Manager,
-     `SESSION_COOKIE_SECURE=true`, `SESSION_COOKIE_SAMESITE=none`,
-     `CANVAS_BASE_URL=https://canvas.ualberta.ca`,
-     `BEDROCK_MODEL_ID=amazon.nova-micro-v1:0`, `AWS_REGION` (match the
-     Bedrock region), `FRONTEND_ORIGIN` (fill in after step 5, then
-     redeploy — or set it once you know Amplify's URL pattern).
-   - Health check path: `/health` (already exists).
-   - Note the resulting `https://xxxxxxxx.awsapprunner.com` URL.
-5. **Amplify app (frontend).**
-   - Connect the same GitHub repo, `frontend/` as the app root.
-   - Build-time env var: `NEXT_PUBLIC_API_URL` = the App Runner URL from
-     step 4.
-   - **App settings → Access control** → restrict with username/password —
-     this is the whitelist.
-   - Note the resulting `https://<branch>.<app-id>.amplifyapp.com` URL.
-6. **Close the loop.** Update the App Runner service's `FRONTEND_ORIGIN` to
-   the Amplify URL from step 5 and redeploy (needed for CORS to allow the
-   real frontend origin).
-7. **Smoke test.** Load the Amplify URL, authenticate past the Basic Auth
-   prompt, log in with a Canvas PAT, sync, submit an outline, run the
-   urgency agent — same checks as local dev, against the real deployment.
+See **`AWS_SETUP.md`** for the full click-by-click / command-by-command
+guide, service by service: IAM (Bedrock instance role), ECR (build/push the
+backend image — App Runner deploys from a container image, not by building
+the Dockerfile itself, since its source-based deploys only support managed
+buildpack runtimes, not custom Dockerfiles), RDS, Secrets Manager, the VPC
+Connector, App Runner, and Amplify (including the monorepo app-root setting
+and the Access Control whitelist), ending with a cross-wiring step and a
+verification checklist. `amplify.yml` at the repo root already configures
+Amplify's monorepo build for the `frontend/` app.
 
 ## Rough monthly cost (low-traffic prototype, us-east-1)
 
